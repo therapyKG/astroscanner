@@ -902,7 +902,7 @@ class Toupcam:
                 cls.__lib.Toupcam_HotPlug(cls.__HOTPLUG_CALLBACK(0), None)
             else:
                 cls.__hotplug_cb = cls.__HOTPLUG_CALLBACK(cls.__hotplugCallbackFun)
-                cls.__lib.Toupcam_HotPlug(__hotplug_cb, None)
+                cls.__lib.Toupcam_HotPlug(cls.__hotplug_cb, None)
 
     @classmethod
     def EnumV2(cls):
