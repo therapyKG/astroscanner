@@ -46,7 +46,7 @@ class App:
                     except toupcam.HRESULTException as e:
                         print('init failed, err=0x{:x}'.format(e.hr & 0xffffffff))
                     #print('max fan speed = {:x}'.format(fanspeed & 0xffffffff))
-                    input('init ok, press ENTER to continue.' )
+                    input('press ENTER to continue.' )
 
                     if self.buf:
                         try:
