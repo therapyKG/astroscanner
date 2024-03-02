@@ -1,10 +1,15 @@
 import toupcam
 
-class App:
+CAM_NOT_FOUND = 1
+CAM_INIT_FAILED = 2
+CAM_OPEN_FAILED = 3
+
+class Cam:
     def __init__(self):
         self.hcam = None
         self.buf = None
         self.total = 0
+        self.flag_next_frame = 0
 
 # the vast majority of callbacks come from toupcam.dll/so/dylib internal threads
     @staticmethod
@@ -16,6 +21,7 @@ class App:
         if nEvent == toupcam.TOUPCAM_EVENT_IMAGE:
             try:
                 self.hcam.PullImageV3(self.buf, 0, 24, 0, None)
+                self.flag_next_frame = 1
                 self.total += 1
                 print('pull image ok, total = {}'.format(self.total))
             except toupcam.HRESULTException as ex:
@@ -39,7 +45,7 @@ class App:
                     self.buf = bytes(bufsize)
 
                     try:
-                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_RAW, 1)
+                        #toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_RAW, 1)
                         fanspeed = self.hcam.FanMaxSpeed()
                         toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_FAN, fanspeed)
                         toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_TEC, 1)
@@ -50,23 +56,28 @@ class App:
                     except toupcam.HRESULTException as e:
                         print('init failed, err=0x{:x}'.format(e.hr & 0xffffffff))
                     #print('max fan speed = {:x}'.format(fanspeed & 0xffffffff))
-                    input('press ENTER to continue.' )
+                    #input('press ENTER to continue.' )
 
                     if self.buf:
                         try:
                             self.hcam.StartPullModeWithCallback(self.cameraCallback, self)
                         except toupcam.HRESULTException as ex:
                             print('failed to start camera, hr=0x{:x}'.format(ex.hr & 0xffffffff))
-                    input('press ENTER to exit')
-                finally:
+                    #input('press ENTER to exit')
+                except toupcam.HRESULTException as er:
+                    print('failed and closed, err=0x{:x}'.format(er.hr & 0xffffffff))
                     self.hcam.Close()
                     self.hcam = None
                     self.buf = None
+                print("####REACHED!#####")
+                #self.hcam.Close()
+                #self.hcam = None
+                #self.buf = None
             else:
                 print('failed to open camera')
         else:
             print('no camera found')
 
 if __name__ == '__main__':
-    app = App()
+    app = Cam()
     app.run()
