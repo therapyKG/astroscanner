@@ -13,7 +13,8 @@ def bmi():
                     (35, 'Moderately obese'), (float('inf'), 'Severely obese')]
     for top, status in top_status:
         if BMI <= top:
-            put_text('Your BMI: %.1f. Category: %s' % (BMI, status))
-        break
+            put_text('Your actual BMI: %.1f. Category: %s' % (BMI, status))
+            break
+
 if __name__ == '__main__':
-    start_server(bmi,port=80)
+    start_server(bmi,port=1267)

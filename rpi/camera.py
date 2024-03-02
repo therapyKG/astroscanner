@@ -30,6 +30,7 @@ class App:
             for r in a[0].model.res:
                 print('\t = [{} x {}]'.format(r.width, r.height))
             self.hcam = toupcam.Toupcam.Open(a[0].id)
+            print('high-fullwell={:x}'.format(a[0].model.flag & toupcam.TOUPCAM_FLAG_HIGH_FULLWELL))
             if self.hcam:
                 try:
                     width, height = self.hcam.get_Size()
@@ -43,6 +44,9 @@ class App:
                         toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_FAN, fanspeed)
                         toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_TEC, 1)
                         toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_TECTARGET, 50)
+
+                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_HIGH_FULLWELL, 1)
+
                     except toupcam.HRESULTException as e:
                         print('init failed, err=0x{:x}'.format(e.hr & 0xffffffff))
                     #print('max fan speed = {:x}'.format(fanspeed & 0xffffffff))
