@@ -1,11 +1,7 @@
-from gpiozero import PWMOutputDevice, DigitalOutputDevice
-import time
-
-stepper_ena = DigitalOutputDevice(4)
-stepper = PWMOutputDevice(17, frequency=100)
-
-stepper_ena.on()
-time.sleep(0.5)
-stepper.on()
-time.sleep(3)
-stepper.off()
+import serial
+ttl = serial.Serial("/dev/ttyAMA0", baudrate=115200, timeout=1)
+data = bytes.fromhex('01FD0100FF00000005DC00006B')
+ttl.write(data)
+line = ttl.read(10)
+print(line.hex())
+ttl.close()

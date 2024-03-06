@@ -26,20 +26,21 @@ class Cam:
                 #self.hcam.PullImageV3(self.buf, 0, 24, 0, None)
                 self.hcam.PullImageV3(self.rawbuf, 0, 48, 0, None)
                 rawdata = np.frombuffer(self.rawbuf, dtype='uint16').reshape((4168, 6224))
+                binned_img = rawdev.process_raw_binning(rawdata)
                 self.total += 1
                 self.flag_do_capture = 0
                 print('pull RAW ok, total = {}'.format(self.total))
                 #print(rawdata)
 
                 #img = rawdev.process_raw_binning(io.BytesIO(self.rawbuf))
-                tifffile.imwrite("rpi/raw.tif", rawdata, photometric='minisblack')
+                tifffile.imwrite("rpi/raw_binned.tif", binned_img.astype('uint16'), photometric='rgb')
 
             except toupcam.HRESULTException as ex:
                 print('pull image failed, hr=0x{:x}'.format(ex.hr & 0xffffffff))
         else:
             #dump unused frames into buffer
             self.hcam.PullImageV3(self.buf, 0, 48, 0, None)
-            print('event callback: {}'.format(nEvent))
+            print('dumped buffer, event callback: {}'.format(nEvent))
 
     def run(self):
         a = toupcam.Toupcam.EnumV2()
@@ -81,6 +82,7 @@ class Cam:
                     if self.rawbuf:
                         try:
                             self.flag_do_capture = 1
+                            #TODO: add wait for sensor to cool
                             self.hcam.StartPullModeWithCallback(self.cameraCallback, self)
                         except toupcam.HRESULTException as ex:
                             print('failed to start camera, hr=0x{:x}'.format(ex.hr & 0xffffffff))

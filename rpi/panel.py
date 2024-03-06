@@ -1,10 +1,12 @@
-# A simple script to calculate BMI
+#Web control interface for Astroscanner
 from pywebio.input import input, FLOAT
 from pywebio.output import put_text
 from pywebio import start_server
 from pywebio.output import use_scope, put_image, put_code
 from pywebio.session import hold, set_env
 from pywebio.pin import put_select, pin_wait_change
+
+from PIL import Image
 
 import time, camera
 
