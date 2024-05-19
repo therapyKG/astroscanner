@@ -6,33 +6,44 @@ import numpy as np
 #output: extracted RGB layers as a 3d ndarray
 def process_raw(buffer):
     #open raw file and load raw pixel value into rawdata
-    rawdata = np.asarray(buffer, 'uint32')
+    #rawdata = np.asarray(buffer, 'uint16').reshape((2084, 3112))
+    #print("BINNED SHAPE: " + str(buffer.shape))
+    rawdata = buffer.reshape(2084,3112)
 
-    red_channel = rawdata[1::2, 0::2]
+    red_channel = rawdata[1::2, 1::2]
 
-    g_0 = rawdata[0::2, 0::2]
-    g_1 = rawdata[1::2, 1::2]
-    green_channel = np.floor_divide((g_0 + g_1), 2)
+    g_0 = rawdata[0::2, 1::2]
+    g_1 = rawdata[1::2, 0::2]
+    green_channel = np.mean(np.array([g_0, g_1]), axis=0).astype('uint16')
 
-    blue_channel = rawdata[0::2, 1::2]
+    blue_channel = rawdata[0::2, 0::2]
 
-    return np.asarray([red_channel, green_channel, blue_channel])
+    return np.asarray([red_channel, green_channel, blue_channel]).transpose(1,2,0)
 
 #perform 2-binning on 3d rgb array for further SNR improvements
 def bin(rgb_array):
-
-    pix_0 = np.asarray([ch[0::2, 0::2] for ch in rgb_array])
-    pix_1 = np.asarray([ch[1::2, 0::2] for ch in rgb_array])
-    pix_2 = np.asarray([ch[0::2, 1::2] for ch in rgb_array])
-    pix_3 = np.asarray([ch[1::2, 1::2] for ch in rgb_array])
-
-    return np.floor_divide((pix_0 + pix_1 + pix_2 + pix_3), 4).transpose(1,2,0)
+    new_shape=[(int)(rgb_array.shape[1]/2), 2, (int)(rgb_array.shape[2]/2), 2]
+    return np.asarray([rgb_array[i].reshape(new_shape).mean(-1).mean(1) for i in range(3)])
 
 def process_raw_binning(buffer):
-    return bin(process_raw(buffer))
+    rawdata = np.asarray(buffer, 'uint32')
+    new_shape=[(int)(rawdata.shape[0]/4), 2, (int)(rawdata.shape[1]/4), 2]
+
+    red_channel = rawdata[1::2, 1::2].reshape(new_shape).mean(-1).mean(1)
+
+    g_0 = rawdata[0::2, 1::2]
+    g_1 = rawdata[1::2, 0::2]
+    green_channel = np.mean(np.array([g_0, g_1]), axis=0).reshape(new_shape).mean(-1).mean(1)
+
+    blue_channel = rawdata[0::2, 0::2].reshape(new_shape).mean(-1).mean(1)
+
+    return np.asarray([red_channel, green_channel, blue_channel]).transpose(1,2,0)
+
+def process_low_res(buffer):
+    pass
 
 if __name__ == '__main__':
-    buf = io.open("rpi/pins.fit", "rb")
+    buf = io.open("pins.fit", "rb")
     img = process_raw_binning(buf)
     print(img.shape)
     #tifffile.imwrite('rpi/pins.tif', img.astype('uint16'), photometric='rgb')

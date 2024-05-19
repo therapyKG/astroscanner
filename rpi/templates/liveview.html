@@ -1,0 +1,72 @@
+{% extends 'base.html' %} {% block content %}
+<div class="status_bar">
+    <div id="temp_block"></div>
+    <div id="expo_block"></div>
+    <img id="lv_image" width=1200 height=800></img>
+    <div>
+    <button type="button" id="UP" onclick="go_up()">UP</button>
+    <button type="button" id="DOWN" onclick="go_down()">DOWN</button>
+    </div>
+    <div>
+    <button type="button" id="FOCUS" onclick="do_focus()">AUTOFOCUS</button>
+    <button type="button" id="LIGHT" onclick="lightswitch()">LIGHT SWITCH</button>
+    </div>
+    <div>
+        <button type="button" id="expo_up" onclick="expo_up()">EXPO UP</button>
+        <button type="button" id="expo_down" onclick="expo_down()">EXPO DOWN</button>
+    </div>
+    <div>
+        <button type="button" id="SAVE" onclick="save_slice()">SAVE SLICE</button>
+    </div>
+</div>
+<script type="text/javascript">
+    var socketio = io();
+    const temp_block = document.getElementById("temp_block");
+    const expo_block = document.getElementById("expo_block");
+    const lv_image = document.getElementById("lv_image");
+
+    socketio.on("temp_update", (payload)=>{
+        const content = `
+        <div class="text">
+            <span>
+                <strong>Camera Temperature</strong>: ${payload.data}
+            </span>
+        </div>`;
+
+        temp_block.innerHTML = content;
+    });
+
+    socketio.on("expo_update", (payload)=>{
+        const content = `
+        <div class="text">
+            <span>
+                <strong>Exposure Time</strong>: ${payload.data} ms
+            </span>
+        </div>`;
+
+        expo_block.innerHTML = content;
+    });
+
+    socketio.on("liveview_update", (payload)=>{
+        //var arrayBufferView = new Uint8Array(payload.data);
+        var blob = new Blob( [ payload.data ], { type: "image/jpeg" });
+        var img_url = URL.createObjectURL(blob);
+        lv_image.src = img_url;
+    });
+
+    setInterval(() => {socketio.emit("lv_polling")}, 300);
+
+    const go_up = () => {socketio.emit("go_up");}
+    const go_down = () => {socketio.emit("go_down");}
+
+    const expo_up = () => {socketio.emit("expo_up");}
+    const expo_down = () => {socketio.emit("expo_down");}
+
+    const do_focus = () => {socketio.emit("focus");}
+
+    const lightswitch = () => {socketio.emit("lightswitch");}
+
+    const save_slice = () => {socketio.emit("saveslice")}
+
+</script>
+{%endblock%}

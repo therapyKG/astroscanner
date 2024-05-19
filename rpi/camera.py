@@ -1,4 +1,4 @@
-import toupcam, io, tifffile, rawdev
+import toupcam, io, tifffile, rawdev, motor
 import numpy as np
 
 CAM_NOT_FOUND = 1
@@ -8,39 +8,72 @@ CAM_OPEN_FAILED = 3
 class Cam:
     def __init__(self):
         self.hcam = None
-        self.buf = None
+        self.binned = None
         self.rawbuf = None
+        self.lowres_buf = None
         self.total = 0
-        self.flag_do_capture = 0
+        self.save_capture = False
+        self.has_new = False
+        self.curr_shutter_speed = 350
+        self.curr_contrast = None
+        self.start_focus = False
+        self.curr_direction = 'CW'
+        self.TEC_target = 20
+        self.expo_time = 100000
 
-# the vast majority of callbacks come from toupcam.dll/so/dylib internal threads
+    # the vast majority of callbacks come from toupcam.dll/so/dylib internal threads
+    # full-res callback with binning for image capture
     @staticmethod
     def cameraCallback(nEvent, ctx):
         if nEvent == toupcam.TOUPCAM_EVENT_IMAGE:
             ctx.CameraCallback(nEvent)
 
+    # low-res fast-readout callback for preview/exposure/focusing
+    @staticmethod
+    def previewCallback(nEvent, ctx):
+        if nEvent == toupcam.TOUPCAM_EVENT_IMAGE:
+            ctx.PreviewCallback(nEvent)
+
     def CameraCallback(self, nEvent):
-
-        if nEvent == toupcam.TOUPCAM_EVENT_IMAGE and self.flag_do_capture == 1:
+        if nEvent == toupcam.TOUPCAM_EVENT_IMAGE:
             try:
-                #self.hcam.PullImageV3(self.buf, 0, 24, 0, None)
                 self.hcam.PullImageV3(self.rawbuf, 0, 48, 0, None)
-                rawdata = np.frombuffer(self.rawbuf, dtype='uint16').reshape((4168, 6224))
-                binned_img = rawdev.process_raw_binning(rawdata)
                 self.total += 1
-                self.flag_do_capture = 0
-                print('pull RAW ok, total = {}'.format(self.total))
-                #print(rawdata)
+                rawdata = np.frombuffer(self.rawbuf, dtype='uint16')
+                self.binned = rawdev.process_raw(rawdata)
+                min_pixel = np.min(rawdata)
+                max_pixel = np.max(rawdata)
+                print("MIN: "+str(min_pixel)+" MAX: "+str(max_pixel))
 
-                #img = rawdev.process_raw_binning(io.BytesIO(self.rawbuf))
-                tifffile.imwrite("rpi/raw_binned.tif", binned_img.astype('uint16'), photometric='rgb')
+                if(min_pixel < 25):
+                    self.expo_time += 100
+                    print("curr expo time = "+str(self.expo_time))
+                    try:
+                        self.hcam.put_ExpoTime(self.expo_time)
+                    except toupcam.HRESULTException as ex:
+                        print('set expo failed, hr=0x{:x}'.format(ex.hr & 0xffffffff))
+                elif(max_pixel > 65500):
+                    self.expo_time -= 100
+                    try:
+                        self.hcam.put_ExpoTime(self.expo_time)
+                    except toupcam.HRESULTException as ex:
+                        print('set expo failed, hr=0x{:x}'.format(ex.hr & 0xffffffff))
 
+                self.has_new = True
             except toupcam.HRESULTException as ex:
-                print('pull image failed, hr=0x{:x}'.format(ex.hr & 0xffffffff))
-        else:
-            #dump unused frames into buffer
-            self.hcam.PullImageV3(self.buf, 0, 48, 0, None)
-            print('dumped buffer, event callback: {}'.format(nEvent))
+                print('pull full-res image failed, hr=0x{:x}'.format(ex.hr & 0xffffffff))
+
+    def PreviewCallback(self, nEvent):
+        if nEvent == toupcam.TOUPCAM_EVENT_IMAGE:
+            try:
+                self.hcam.PullImageV3(self.rawbuf, 0, 48, 0, None)
+                self.total += 1
+                rawdata = np.frombuffer(self.rawbuf, dtype='uint16')
+                self.binned = rawdev.process_raw(rawdata)
+
+                self.has_new = True
+            except toupcam.HRESULTException as ex:
+                print('pull low-res image failed, hr=0x{:x}'.format(ex.hr & 0xffffffff))
 
     def run(self):
         a = toupcam.Toupcam.EnumV2()
@@ -54,57 +87,84 @@ class Cam:
             if self.hcam:
                 try:
                     width, height = self.hcam.get_Size()
-                    bufsize = (width * 2) * height
+                    #bufsize = (int)((width * 2) * height / 4)
                     rawbufsize = (width * 2) * height
                     print('image size: {} x {}, bufsize = {}'.format(width, height, rawbufsize))
-                    self.buf = bytes(bufsize)
-                    self.rawbuf = bytes(rawbufsize)
+
+                    self.rawbuf = bytes((int)(rawbufsize/4))
                     try:
-                        self.hcam.put_Option(toupcam.TOUPCAM_OPTION_RAW, 1)
-
-                        self.hcam.put_Option(toupcam.TOUPCAM_OPTION_PIXEL_FORMAT, toupcam.TOUPCAM_PIXELFORMAT_RAW16)
-                        print("raw option = ", self.hcam.get_Option(toupcam.TOUPCAM_OPTION_PIXEL_FORMAT))
-
-                        fanspeed = self.hcam.FanMaxSpeed()
-                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_FAN, fanspeed)
-
+                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_FAN, self.hcam.FanMaxSpeed())
                         toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_TEC, 1)
-                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_TECTARGET, 50)
-
-                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_HIGH_FULLWELL, 1)
-                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_LOW_NOISE, 1)
+                        toupcam.Toupcam.put_Option(self.hcam, toupcam.TOUPCAM_OPTION_TECTARGET, 20)
 
                     except toupcam.HRESULTException as e:
                         print('init failed, err=0x{:x}'.format(e.hr & 0xffffffff))
-                    #print('max fan speed = {:x}'.format(fanspeed & 0xffffffff))
-                    #input('press ENTER to continue.' )
-
-                    if self.rawbuf:
-                        try:
-                            self.flag_do_capture = 1
-                            #TODO: add wait for sensor to cool
-                            self.hcam.StartPullModeWithCallback(self.cameraCallback, self)
-                        except toupcam.HRESULTException as ex:
-                            print('failed to start camera, hr=0x{:x}'.format(ex.hr & 0xffffffff))
-                    #input('press ENTER to exit')
 
                 except toupcam.HRESULTException as er:
                     print('failed and closed, err=0x{:x}'.format(er.hr & 0xffffffff))
+                    self.hcam.Stop()
                     self.hcam.Close()
                     self.hcam = None
                     self.buf = None
-
                 print("####REACHED!#####")
-
-                input('press ENTER to exit')
-
-                self.hcam.Close()
-                self.hcam = None
-                self.buf = None
             else:
                 print('failed to open camera')
         else:
             print('no camera found')
+
+    # pull full resolution for image capture
+    def pull_high_res(self):
+        if self.rawbuf:
+            try:
+                self.hcam.Stop()
+
+                self.hcam.put_Option(toupcam.TOUPCAM_OPTION_RAW, 1)
+                self.hcam.put_Option(toupcam.TOUPCAM_OPTION_BINNING, 0x82)
+                self.hcam.put_Option(toupcam.TOUPCAM_OPTION_PIXEL_FORMAT, toupcam.TOUPCAM_PIXELFORMAT_RAW16)
+                self.hcam.put_Option(toupcam.TOUPCAM_OPTION_HIGH_FULLWELL, 1)
+                self.hcam.put_Option(toupcam.TOUPCAM_OPTION_LOW_NOISE, 1)
+                #disable auto exposure
+                self.hcam.put_AutoExpoEnable(0)
+                self.hcam.put_ExpoTime(self.expo_time)
+                print("raw option = ", self.hcam.get_Option(toupcam.TOUPCAM_OPTION_PIXEL_FORMAT))
+
+                self.hcam.StartPullModeWithCallback(self.cameraCallback, self)
+
+            except toupcam.HRESULTException as ex:
+                print('failed to start hi-res mode, hr=0x{:x}'.format(ex.hr & 0xffffffff))
+
+    # pull low-res fast-readout for preview
+    def pull_low_res(self):
+        if self.rawbuf:
+            try:
+                self.hcam.Stop()
+
+                self.hcam.StartPullModeWithCallback(self.previewCallback, self)
+
+            except toupcam.HRESULTException as ex:
+                print('failed to start lo-res mode, hr=0x{:x}'.format(ex.hr & 0xffffffff))
+
+    def get_temp(self):
+        return self.hcam.get_Temperature()/10
+
+    def set_temp(self, target):
+        self.hcam.put_Temperature(target*10)
+
+    def get_shutter_speed(self):
+        return self.hcam.get_ExpoTime()
+    
+    def set_shutter_speed(self, time):
+        self.hcam.put_ExpoTime(time)
+
+    def capture(self):
+        self.save_capture = True
+    
+    def shutdown(self):
+        self.hcam.Stop()
+        self.hcam.Close()
+        self.hcam = None
+        self.buf = None
+        print("##### CAM EXITED NORMALLY #####")
 
 if __name__ == '__main__':
     app = Cam()
